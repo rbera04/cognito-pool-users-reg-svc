@@ -1,7 +1,10 @@
-from fastapi import HTTPException, Request, logger
+import logging
+from fastapi import HTTPException, Request
 from typing import Optional
 from jwk_utils import verify_cognito_token
 from config import COGNITO_CLIENT_ID
+
+logger = logging.getLogger(__name__)
 
 
 def get_token_from_header(request: Request) -> Optional[str]:
@@ -27,31 +30,20 @@ async def extract_cognito_headers(request: Request):
 async def require_admin(request: Request):
     pool_id, client_id = await extract_cognito_headers(request)
     token = get_token_from_header(request)
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+
     logger.info(f"Verifying token for pool_id={pool_id}, client_id={client_id}")
 
-    payload = verify_cognito_token(token, audience=client_id, pool_id=pool_id)
+    try:
+        payload = verify_cognito_token(token, audience=client_id, pool_id=pool_id)
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
-    role = payload.get("custom:role")
+    # Cognito places custom attributes in tokens as 'custom:role'
+    role = payload.get("custom:role") or payload.get("role")
     if role != "admin":
-        raise HTTPException(403, "Admin role required")
+        raise HTTPException(status_code=403, detail="Admin role required")
 
     return payload, pool_id, client_id
-
-# async def require_admin(request: Request):
-#     token = get_token_from_header(request)
-#     if not token:
-#         raise HTTPException(status_code=401, detail="Missing Authorization header")
-
-#     try:
-#         # By default we validate audience=COGNITO_CLIENT_ID so token must be meant for our app
-#         payload = verify_cognito_token(token, audience=COGNITO_CLIENT_ID)
-#     except Exception as e:
-#         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-
-#     # Cognito places custom attributes in tokens as 'custom:role'
-#     role = payload.get("custom:role") or payload.get("role")
-#     if role != "admin":
-#         raise HTTPException(status_code=403, detail="Admin role required")
-
-#     # return user info for handlers if needed
-#     return payload

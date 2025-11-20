@@ -10,33 +10,35 @@ from jose.utils import base64url_decode
 import requests
 import time
 from typing import Dict, Any
-from config import COGNITO_JWKS_URL, JWKS_CACHE_TTL, VERIFY_JWT_SIGNATURE, COGNITO_CLIENT_ID
+from config import COGNITO_JWKS_URL, JWKS_CACHE_TTL, VERIFY_JWT_SIGNATURE, COGNITO_CLIENT_ID, AWS_REGION
 
-_jwks_cache: Dict[str, Any] = {"keys": [], "fetched_at": 0}
+# cache keyed by jwks_url to support multiple pools
+_jwks_cache: Dict[str, Any] = {}
 
 
-def _fetch_jwks() -> Dict[str, Any]:
+def _fetch_jwks(jwks_url: str) -> Dict[str, Any]:
     now = int(time.time())
-    if _jwks_cache["keys"] and now - _jwks_cache["fetched_at"] < JWKS_CACHE_TTL:
-        return _jwks_cache
+    entry = _jwks_cache.get(jwks_url)
+    if entry and entry.get("keys") and now - entry.get("fetched_at", 0) < JWKS_CACHE_TTL:
+        return entry
 
-    resp = requests.get(COGNITO_JWKS_URL, timeout=5)
+    resp = requests.get(jwks_url, timeout=5)
     resp.raise_for_status()
     data = resp.json()
-    _jwks_cache["keys"] = data.get("keys", [])
-    _jwks_cache["fetched_at"] = now
-    return _jwks_cache
+    entry = {"keys": data.get("keys", []), "fetched_at": now}
+    _jwks_cache[jwks_url] = entry
+    return entry
 
 
-def get_jwk_for_kid(kid: str) -> Dict[str, Any]:
-    jwks = _fetch_jwks()
+def get_jwk_for_kid(kid: str, jwks_url: str) -> Dict[str, Any]:
+    jwks = _fetch_jwks(jwks_url)
     for key in jwks.get("keys", []):
         if key.get("kid") == kid:
             return key
     raise KeyError("No matching JWK for kid")
 
 
-def verify_cognito_token(token: str, audience: str = None) -> Dict[str, Any]:
+def verify_cognito_token(token: str, audience: str = None, pool_id: str = None) -> Dict[str, Any]:
     """
     Verifies a Cognito JWT token and returns the decoded payload.
 
@@ -54,7 +56,13 @@ def verify_cognito_token(token: str, audience: str = None) -> Dict[str, Any]:
     if not kid:
         raise ValueError("Token header missing kid")
 
-    jwk = get_jwk_for_kid(kid)
+    # determine jwks url: use provided pool_id if present to support multi-pool headers
+    if pool_id:
+        jwks_url = f"https://cognito-idp.{AWS_REGION}.amazonaws.com/{pool_id}/.well-known/jwks.json"
+    else:
+        jwks_url = COGNITO_JWKS_URL
+
+    jwk = get_jwk_for_kid(kid, jwks_url)
 
     # construct public key from jwk
     # python-jose's jwt.decode supports passing jwk directly as the key
