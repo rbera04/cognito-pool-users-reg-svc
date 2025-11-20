@@ -22,10 +22,10 @@ def compute_secret_hash(username: str, client_id: str, client_secret: str) -> st
     return base64.b64encode(dig).decode()
 
 
-def admin_create_user(pool_id: str, email: str, role: str, temporary_password: str = None) -> dict:
+def admin_create_user(pool_id: str, email: str, role: str, password: str = None) -> dict:
     """Create a user in Cognito with custom:role attribute. Returns AWS response dict."""
-    if temporary_password is None:
-        temporary_password = "TempPass@123"  # choose a secure generator in prod
+    if password is None:
+        password = "TempPass@123"  # choose a secure generator in prod
 
     try:
         resp = cognito.admin_create_user(
@@ -39,12 +39,12 @@ def admin_create_user(pool_id: str, email: str, role: str, temporary_password: s
             MessageAction="SUPPRESS"  # suppress sending Cognito invite email
         )
 
-        # Set temporary password and force password reset
+        # Set permanent password
         cognito.admin_set_user_password(
             UserPoolId=pool_id,
             Username=email,
-            Password=temporary_password,
-            Permanent=False
+            Password=password,
+            Permanent=True
         )
 
         return {"ok": True, "detail": resp}

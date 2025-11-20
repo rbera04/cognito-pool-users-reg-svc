@@ -1,0 +1,25 @@
+%% Mermaid flowchart for service workflow
+
+flowchart TD
+  A[User / Client] -->|POST /login| B[FastAPI /login]
+  B -->|initiate_auth| C[Cognito: InitiateAuth]
+  C -->|AuthenticationResult| B
+  B -->|set cookie id_token| A
+
+  A -->|POST /create-user| D[FastAPI /create-user]
+  D -->|check headers| E{Has Authorization header?}
+  E -- yes --> F[Verify token via JWKS]
+  E -- no --> G{Has id_token cookie?}
+  G -- yes --> F
+  G -- no --> H[Return 401: please sign-in]
+
+  F -->|roles/admin?| I{Is admin?}
+  I -- yes --> J[auth.admin_create_user -> Cognito admin_create_user]
+  I -- no --> K[Return 403 Forbidden]
+
+  J --> L[Cognito: admin_create_user]
+  L --> M[Return success to client]
+
+  style B fill:#f9f,stroke:#333,stroke-width:1px
+  style D fill:#bbf,stroke:#333,stroke-width:1px
+  style L fill:#bfb,stroke:#333,stroke-width:1px

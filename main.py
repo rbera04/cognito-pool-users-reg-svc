@@ -11,6 +11,7 @@ app = FastAPI(title="Cognito Admin Create User")
 class CreateUserRequest(BaseModel):
     email: EmailStr
     role: str  # e.g. "admin" or "user"
+    password: str  # initial password for the user
 
 
 class LoginRequest(BaseModel):
@@ -22,12 +23,12 @@ class LoginRequest(BaseModel):
 async def create_user(req: CreateUserRequest, _admin=Depends(require_admin)):
     # Create the user in Cognito with admin_create_user
     payload, pool_id, client_id = _admin
-    result = admin_create_user(pool_id, req.email, req.role)
+    result = admin_create_user(pool_id, req.email, req.role, password=req.password)
     if not result.get("ok"):
         return JSONResponse(status_code=400, content={"detail": result.get("error")})
 
     # In production you might want to send an email to the user with next steps.
-    return {"message": "User created in Cognito. Temporary password set (user must change password on first login)."}
+    return {"message": "User created in Cognito. Permanent password set. User can now log in."}
 
 @app.post("/login")
 async def login(req: LoginRequest, request: Request):
