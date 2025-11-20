@@ -6,6 +6,8 @@ from config import COGNITO_CLIENT_ID
 
 logger = logging.getLogger(__name__)
 
+IDTOKEN_COOKIE_NAME = "id_token"
+
 
 def get_token_from_header(request: Request) -> Optional[str]:
     auth = request.headers.get("Authorization")
@@ -14,6 +16,14 @@ def get_token_from_header(request: Request) -> Optional[str]:
     if not auth.lower().startswith("bearer "):
         return None
     return auth.split(" ", 1)[1].strip()
+
+
+def get_token_from_cookie(request: Request) -> Optional[str]:
+    """Retrieve IdToken from cookies."""
+    token = request.cookies.get(IDTOKEN_COOKIE_NAME)
+    if token:
+        logger.info("Retrieved IdToken from cookie")
+    return token
 
 async def extract_cognito_headers(request: Request):
     pool_id = request.headers.get("X-Cognito-Pool-Id")
@@ -29,10 +39,14 @@ async def extract_cognito_headers(request: Request):
 
 async def require_admin(request: Request):
     pool_id, client_id = await extract_cognito_headers(request)
+    
+    # Try to get token from Authorization header first, then fall back to cookie
     token = get_token_from_header(request)
-
     if not token:
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
+        token = get_token_from_cookie(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing IdToken. Please sign in first using /login")
 
     logger.info(f"Verifying token for pool_id={pool_id}, client_id={client_id}")
 

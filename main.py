@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr
 from auth import admin_create_user, initiate_auth
-from utils import require_admin, get_token_from_header
+from utils import get_token_from_cookie, require_admin, get_token_from_header, IDTOKEN_COOKIE_NAME
 from config import APP_BASE_URL
-from fastapi.responses import JSONResponse
 
 app = FastAPI(title="Cognito Admin Create User")
 
@@ -36,6 +36,21 @@ async def login(req: LoginRequest, request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Extract IdToken from Cognito response and set it as a cookie
+    id_token = resp.get("AuthenticationResult", {}).get("IdToken")
+    if id_token:
+        response = JSONResponse(content=resp)
+        # Set secure cookie (HttpOnly=True prevents JS access, Secure=True for HTTPS only in prod)
+        response.set_cookie(
+            key=IDTOKEN_COOKIE_NAME,
+            value=id_token,
+            httponly=True,
+            secure=False,  # Set to True in production with HTTPS
+            samesite="lax",
+            max_age=3600  # 1 hour expiry
+        )
+        return response
+    
     return resp
 
 
@@ -43,7 +58,10 @@ async def login(req: LoginRequest, request: Request):
 async def whoami(request: Request):
     token = get_token_from_header(request)
     if not token:
-        raise HTTPException(status_code=401, detail="Missing token")
+        token = get_token_from_cookie(request)
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing IdToken. Please sign in first using /login")
     # decode without verification for quick info (not secure)
     from jose import jwt
     claims = jwt.get_unverified_claims(token)
