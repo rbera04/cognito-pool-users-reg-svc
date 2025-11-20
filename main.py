@@ -29,9 +29,8 @@ async def create_user(req: CreateUserRequest, _admin=Depends(require_admin)):
     # In production you might want to send an email to the user with next steps.
     return {"message": "User created in Cognito. Temporary password set (user must change password on first login)."}
 
-
 @app.post("/login")
-def login(req: LoginRequest):
+async def login(req: LoginRequest, request: Request):
     try:
         resp = initiate_auth(req.username, req.password)
     except Exception as e:

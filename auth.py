@@ -2,10 +2,24 @@
 Encapsulates Cognito operations used by the FastAPI app.
 """
 import boto3
+import hmac
+import hashlib
+import base64
 from botocore.exceptions import ClientError
-from config import AWS_REGION, COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID
+from config import AWS_REGION, COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, COGNITO_CLIENT_SECRET
 
 cognito = boto3.client("cognito-idp", region_name=AWS_REGION)
+
+
+def compute_secret_hash(username: str, client_id: str, client_secret: str) -> str:
+    """Compute SECRET_HASH for Cognito authentication with client secret."""
+    if not client_secret:
+        return None
+    
+    message = bytes(username + client_id, 'utf-8')
+    secret = bytes(client_secret, 'utf-8')
+    dig = hmac.new(secret, msg=message, digestmod=hashlib.sha256).digest()
+    return base64.b64encode(dig).decode()
 
 
 def admin_create_user(pool_id: str, email: str, role: str, temporary_password: str = None) -> dict:
@@ -41,12 +55,16 @@ def admin_create_user(pool_id: str, email: str, role: str, temporary_password: s
 
 
 def initiate_auth(username: str, password: str) -> dict:
-    """Perform USER_PASSWORD_AUTH to get tokens. Requires client without secret or SRP flow.
-    Note: If CLIENT_SECRET is configured you'll need to compute SECRET_HASH.
-    """
+    """Perform USER_PASSWORD_AUTH to get tokens. Handles client with or without secret."""
     params = {"USERNAME": username, "PASSWORD": password}
+    
+    # Add SECRET_HASH if client secret is configured
+    secret_hash = compute_secret_hash(username, COGNITO_CLIENT_ID, COGNITO_CLIENT_SECRET)
+    if secret_hash:
+        params["SECRET_HASH"] = secret_hash
+    
     try:
-        resp = boto3.client("cognito-idp", region_name=AWS_REGION).initiate_auth(
+        resp = cognito.initiate_auth(
             ClientId=COGNITO_CLIENT_ID,
             AuthFlow="USER_PASSWORD_AUTH",
             AuthParameters=params

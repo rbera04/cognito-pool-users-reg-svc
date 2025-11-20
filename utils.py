@@ -1,4 +1,4 @@
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, logger
 from typing import Optional
 from jwk_utils import verify_cognito_token
 from config import COGNITO_CLIENT_ID
@@ -21,12 +21,13 @@ async def extract_cognito_headers(request: Request):
             status_code=400,
             detail="Missing required headers: X-Cognito-Pool-Id, X-Cognito-Client-Id"
         )
-
+    logger.info(f"Extracted Cognito headers: pool_id={pool_id}, client_id={client_id}")
     return pool_id, client_id
 
 async def require_admin(request: Request):
     pool_id, client_id = await extract_cognito_headers(request)
     token = get_token_from_header(request)
+    logger.info(f"Verifying token for pool_id={pool_id}, client_id={client_id}")
 
     payload = verify_cognito_token(token, audience=client_id, pool_id=pool_id)
 
