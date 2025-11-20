@@ -1,0 +1,25 @@
+# help me basic .gitinore
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+# Ignore virtual environment directories
+venv/
+env/
+.venv/
+# Ignore IDE specific files
+.vscode/
+.idea/
+# Ignore system files
+.DS_Store
+Thumbs.db
+# Ignore log files
+*.log
+# Ignore compiled files
+*.so
+*.dll
+*.dylib
+# Ignore distribution/build directories
+build/
+dist/
+*.egg-info/
