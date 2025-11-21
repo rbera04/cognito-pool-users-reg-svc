@@ -22,20 +22,34 @@ def compute_secret_hash(username: str, client_id: str, client_secret: str) -> st
     return base64.b64encode(dig).decode()
 
 
-def admin_create_user(pool_id: str, email: str, role: str, password: str = None) -> dict:
-    """Create a user in Cognito with custom:role attribute. Returns AWS response dict."""
+def admin_create_user(pool_id: str, email: str, role: str, password: str = None, extra_attributes: dict = None) -> dict:
+    """Create a user in Cognito with custom:role attribute and optional extra attributes.
+    `extra_attributes` should be a mapping of attribute name -> value (e.g. {"custom:roleName":"Editor"}).
+    Returns AWS response dict and fetched user info under `user` key when available.
+    """
     if password is None:
         password = "TempPass@123"  # choose a secure generator in prod
+
+    # Build base attributes and merge any extras (extras override defaults when names conflict)
+    user_attrs = {
+        "email": email,
+        "email_verified": "true",
+        # "custom:role": role,
+    }
+
+    if extra_attributes:
+        for k, v in extra_attributes.items():
+            if v is None:
+                continue
+            user_attrs[str(k)] = str(v)
+
+    attributes_list = [{"Name": k, "Value": v} for k, v in user_attrs.items()]
 
     try:
         resp = cognito.admin_create_user(
             UserPoolId=pool_id,
             Username=email,
-            UserAttributes=[
-                {"Name": "email", "Value": email},
-                {"Name": "email_verified", "Value": "true"},
-                {"Name": "custom:role", "Value": role},
-            ],
+            UserAttributes=attributes_list,
             MessageAction="SUPPRESS"  # suppress sending Cognito invite email
         )
 
@@ -47,7 +61,24 @@ def admin_create_user(pool_id: str, email: str, role: str, password: str = None)
             Permanent=True
         )
 
-        return {"ok": True, "detail": resp}
+        # Ensure attributes are applied (custom attributes must exist in pool schema)
+        try:
+            if attributes_list:
+                cognito.admin_update_user_attributes(
+                    UserPoolId=pool_id,
+                    Username=email,
+                    UserAttributes=attributes_list
+                )
+        except Exception:
+            pass
+
+        # Fetch user to return effective attributes for verification
+        try:
+            get_resp = cognito.admin_get_user(UserPoolId=pool_id, Username=email)
+        except Exception:
+            get_resp = None
+
+        return {"ok": True, "detail": resp, "user": get_resp}
     except cognito.exceptions.UsernameExistsException:
         return {"ok": False, "error": "User already exists"}
     except ClientError as e:

@@ -14,3 +14,6 @@ JWKS_CACHE_TTL = int(os.getenv("JWKS_CACHE_TTL", "300"))
 
 # Cognito JWKS URL pattern
 COGNITO_JWKS_URL = f"https://cognito-idp.{AWS_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}/.well-known/jwks.json"
+
+# Comma-separated allowed roles for create-user validation. Defaults to 'admin,user'
+ALLOWED_ROLES = [r.strip() for r in os.getenv("ALLOWED_ROLES", "admin,user").split(",") if r.strip()]

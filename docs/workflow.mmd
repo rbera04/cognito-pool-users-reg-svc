@@ -1,25 +1,123 @@
-%% Mermaid flowchart for service workflow
+%% Mermaid flowchart for Cognito User Management Service workflow
 
 flowchart TD
-  A[User / Client] -->|POST /login| B[FastAPI /login]
-  B -->|initiate_auth| C[Cognito: InitiateAuth]
-  C -->|AuthenticationResult| B
-  B -->|set cookie id_token| A
+  Start([User/Admin Client]) -->|1. POST /login| Login["🔑 POST /login<br/>Authenticate User"]
+  Login -->|initiate_auth| Cognito1["AWS Cognito<br/>USER_PASSWORD_AUTH"]
+  Cognito1 -->|AuthenticationResult| SetCookie["Set id_token<br/>HTTP-only Cookie"]
+  SetCookie -->|Tokens + Cookie| UserAuth["✅ User Authenticated<br/>(IdToken, AccessToken,<br/>RefreshToken)"]
 
-  A -->|POST /create-user| D[FastAPI /create-user]
-  D -->|check headers| E{Has Authorization header?}
-  E -- yes --> F[Verify token via JWKS]
-  E -- no --> G{Has id_token cookie?}
-  G -- yes --> F
-  G -- no --> H[Return 401: please sign-in]
+  UserAuth -->|2. GET /whoami| WhoAmI["📋 GET /whoami<br/>Verify & Decode Token"]
+  WhoAmI -->|Verify Token| TokenCheck{Token Valid?}
+  TokenCheck -->|Yes| Claims["✅ Return Token Claims<br/>(email, role, custom attrs)"]
+  TokenCheck -->|No| Error401["❌ 401 Unauthorized"]
 
-  F -->|roles/admin?| I{Is admin?}
-  I -- yes --> J[auth.admin_create_user -> Cognito admin_create_user]
-  I -- no --> K[Return 403 Forbidden]
+  UserAuth -->|3. POST /create-user| CreateUser["👤 POST /create-user<br/>(Admin Only)"]
+  CreateUser -->|Check Token| AdminCheck1{Is Admin?}
+  AdminCheck1 -->|No| Error403["❌ 403 Forbidden"]
+  AdminCheck1 -->|Yes| ValidateRole{Role in<br/>ALLOWED_ROLES?}
+  ValidateRole -->|No| Error400_Role["❌ 400 Invalid Role"]
+  ValidateRole -->|Yes| CreateCognito["admin_create_user<br/>with custom attributes"]
+  CreateCognito -->|admin_set_user_password| AdminSetPass["Set Permanent Password"]
+  AdminSetPass -->|admin_update_user_attributes| UpdateAttrs["Apply Custom Attributes<br/>(custom:roleName,<br/>custom:roleId)"]
+  UpdateAttrs -->|Success| SuccessCreate["✅ User Created"]
 
-  J --> L[Cognito: admin_create_user]
-  L --> M[Return success to client]
+  UserAuth -->|4. GET /list-users| ListUsers["📊 GET /list-users<br/>(Admin Only)"]
+  ListUsers -->|Check Token| AdminCheck2{Is Admin?}
+  AdminCheck2 -->|No| Error403_2["❌ 403 Forbidden"]
+  AdminCheck2 -->|Yes| PaginateUsers["Cognito: list_users<br/>with pagination"]
+  PaginateUsers -->|Extract attributes| FormatUsers["📋 Format User List<br/>with attributes"]
+  FormatUsers -->|Success| SuccessList["✅ Return Users List"]
 
-  style B fill:#f9f,stroke:#333,stroke-width:1px
-  style D fill:#bbf,stroke:#333,stroke-width:1px
-  style L fill:#bfb,stroke:#333,stroke-width:1px
+  UserAuth -->|5. POST /update-user| UpdateUser["✏️ POST /update-user<br/>(Admin Only)"]
+  UpdateUser -->|Check Token| AdminCheck3{Is Admin?}
+  AdminCheck3 -->|No| Error403_3["❌ 403 Forbidden"]
+  AdminCheck3 -->|Yes| ValidateAttrs{Attributes<br/>to Update?}
+  ValidateAttrs -->|None| Error400_NoAttrs["❌ 400 No Attributes"]
+  ValidateAttrs -->|Yes| AdminUpdateAttrs["admin_update_user_attributes<br/>Update custom fields"]
+  AdminUpdateAttrs -->|Fetch updated| FetchUpdated["admin_get_user<br/>Get updated attributes"]
+  FetchUpdated -->|Success| SuccessUpdate["✅ User Updated"]
+
+  UserAuth -->|6. POST /change-password| ChangePass["🔐 POST /change-password<br/>Change Own Password"]
+  ChangePass -->|Extract username| ReAuth["Re-authenticate<br/>with old password"]
+  ReAuth -->|initiate_auth| Cognito2["AWS Cognito<br/>USER_PASSWORD_AUTH"]
+  Cognito2 -->|Get AccessToken| CheckAccess{AccessToken<br/>Obtained?}
+  CheckAccess -->|No| Error401_OldPass["❌ 401 Old Password<br/>Incorrect"]
+  CheckAccess -->|Yes| ChangePass_API["change_password<br/>with AccessToken"]
+  ChangePass_API -->|Success| SuccessPass["✅ Password Changed"]
+  ChangePass_API -->|Invalid New Pass| Error400_NewPass["❌ 400 Password<br/>Requirements Not Met"]
+
+  Error401 --> End1(["End - Error"])
+  Error400_Role --> End2(["End - Error"])
+  Error403 --> End3(["End - Error"])
+  Error403_2 --> End4(["End - Error"])
+  Error403_3 --> End5(["End - Error"])
+  Error400_NoAttrs --> End6(["End - Error"])
+  Error401_OldPass --> End7(["End - Error"])
+  Error400_NewPass --> End8(["End - Error"])
+  
+  Claims --> End9(["✅ End - Success"])
+  SuccessCreate --> End10(["✅ End - Success"])
+  SuccessList --> End11(["✅ End - Success"])
+  SuccessUpdate --> End12(["✅ End - Success"])
+  SuccessPass --> End13(["✅ End - Success"])
+
+  %% Styling: Black borders, black text, white background
+  style Start fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style Login fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style Cognito1 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style SetCookie fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style UserAuth fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  
+  style WhoAmI fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style TokenCheck fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style Claims fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style Error401 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  
+  style CreateUser fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style AdminCheck1 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style Error403 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style ValidateRole fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style Error400_Role fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style CreateCognito fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style AdminSetPass fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style UpdateAttrs fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style SuccessCreate fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  
+  style ListUsers fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style AdminCheck2 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style Error403_2 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style PaginateUsers fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style FormatUsers fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style SuccessList fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  
+  style UpdateUser fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style AdminCheck3 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style Error403_3 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style ValidateAttrs fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style Error400_NoAttrs fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style AdminUpdateAttrs fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style FetchUpdated fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style SuccessUpdate fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  
+  style ChangePass fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style ReAuth fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style Cognito2 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style CheckAccess fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style Error401_OldPass fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style ChangePass_API fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style SuccessPass fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style Error400_NewPass fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  
+  style End1 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style End2 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style End3 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style End4 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style End5 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style End6 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style End7 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style End8 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style End9 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style End10 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style End11 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style End12 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
+  style End13 fill:#ffffff,stroke:#000000,stroke-width:2px,color:#000000
