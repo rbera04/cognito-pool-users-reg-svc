@@ -3,7 +3,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr
 from auth import admin_create_user, initiate_auth
 from utils import get_token_from_cookie, require_admin, get_token_from_header, IDTOKEN_COOKIE_NAME
-from config import APP_BASE_URL
+from jwk_utils import verify_cognito_token
+from config import APP_BASE_URL, COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID
 
 app = FastAPI(title="Cognito Admin Create User")
 
@@ -57,13 +58,18 @@ async def login(req: LoginRequest, request: Request):
 
 @app.get("/whoami")
 async def whoami(request: Request):
-    token = get_token_from_header(request)
-    if not token:
-        token = get_token_from_cookie(request)
-    
+    # Try header first, then cookie
+    token = get_token_from_header(request) or get_token_from_cookie(request)
     if not token:
         raise HTTPException(status_code=401, detail="Missing IdToken. Please sign in first using /login")
-    # decode without verification for quick info (not secure)
-    from jose import jwt
-    claims = jwt.get_unverified_claims(token)
-    return claims
+
+    # Allow callers to pass pool/client via headers; fall back to defaults from config
+    pool_id = request.headers.get("X-Cognito-Pool-Id") or COGNITO_USER_POOL_ID
+    client_id = request.headers.get("X-Cognito-Client-Id") or COGNITO_CLIENT_ID
+
+    try:
+        payload = verify_cognito_token(token, audience=client_id, pool_id=pool_id)
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+    return payload

@@ -48,6 +48,16 @@ def verify_cognito_token(token: str, audience: str = None, pool_id: str = None) 
     if not VERIFY_JWT_SIGNATURE:
         # WARNING: no signature verification
         payload = jwt.get_unverified_claims(token)
+        # even when skipping signature verification, enforce token expiration
+        exp = payload.get("exp")
+        if exp is not None:
+            now = int(time.time())
+            try:
+                exp_int = int(exp)
+            except Exception:
+                raise ValueError("Invalid exp claim in token")
+            if exp_int < now:
+                raise ValueError("Token expired")
         return payload
 
     # With signature verification
